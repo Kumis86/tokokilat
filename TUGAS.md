@@ -7,7 +7,7 @@ Karakteristik kualitas yang disorot (ISO/IEC 25010:2023): **Performance efficien
 | ----------- | ------------------------------------------------------------ |
 | Mata kuliah | PEMODELAN WEB                                                |
 | Bentuk      | Tim 3-4 orang, ditambah sesi debugging langsung per individu |
-| Durasi      | 3 minggu kalender (perkiraan usaha 16-24 jam per tim)        |
+| Durasi      | 1 minggu kalender                                            |
 | Tenggat     | 241524019                                                    |
 
 ## 1. Skenario

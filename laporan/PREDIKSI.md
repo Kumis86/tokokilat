@@ -22,6 +22,43 @@ Data baseline di bawah ini diperoleh secara empiris dari pengujian tim yang dido
   - `npm run start:berat`: Server dengan `JUMLAH_PRODUK = 5000` (terverifikasi dari banner katalog `5.000 produk ditampilkan`).
 - **Artefak Bukti:** 16 tangkapan layar rekaman trace DevTools (Performance panel, Network panel, Console, dan Alat Ukur TokoKilat) yang tersimpan pada tabel `HASIL TRACE WEBSITE.docx` (Row 1 s.d. Row 7).
 
+## Validasi tambahan terhadap `trace_result` (2 Oktober 2026)
+
+Folder `laporan/trace_result` berisi **raw trace DevTools**, bukan hasil pengukuran
+pasca-perbaikan. Karena itu, data ini dipakai sebagai pemeriksaan silang terhadap
+baseline di atas dan tidak boleh dianggap sebagai bagian **Sesudah perbaikan**.
+Perhitungan berikut dibuat langsung dari event trace dengan konfigurasi CPU 4x,
+viewport Responsive, dan sumber `DevTools/TraceEvents`.
+
+| Skenario | Fakta yang terverifikasi dari JSON | Implikasi untuk laporan |
+|---|---|---|
+| S0 | CLS kumulatif maksimum **0,4749**; LCP kandidat **204,24 ms**; terdapat **18** `RunTask` berdurasi >=50 ms, terlama **828,32 ms**; Network mencatat **1.517 request**, termasuk **1.500 SVG produk**. | Angka CLS mendukung P-07. Namun LCP 44--53 detik dan 5.016 request gambar tidak muncul pada raw S0 ini; angka tersebut harus tetap diberi label sebagai bukti DOCX/screenshot atau diverifikasi ulang. |
+| S1 | Terdapat **116** event `EventTiming`; durasi interaksi keyboard tertinggi **1.833,61 ms**. Ada **47** `RunTask` >=50 ms, terlama **965,02 ms**, dan **11.720** event `Layout`. | Prediksi INP <=200 ms belum terbukti. Angka ini memperkuat diagnosis bahwa input masih terblokir; pengukuran sesudah harus melaporkan median tiga kali, bukan hanya satu durasi maksimum. |
+| S2 | Event tap yang terekam memiliki durasi maksimum **113,37 ms**; terdapat **18** `RunTask` >=50 ms, terlama **865,64 ms**. | Respons tap raw trace masih memiliki long task, tetapi angka 724 long task/4.754,9 ms harus ditelusuri ke screenshot atau trace lain sebelum disebut sebagai hasil JSON. |
+| S3 | Raw trace tidak memuat log terminal, nomor pesanan, atau bukti idempotensi server. | Klaim “3 klik menghasilkan 3 pesanan” hanya sah bila disertai log server; pengukuran sesudah wajib mencatat jumlah POST dan nomor pesanan dari terminal, bukan menyimpulkannya dari trace browser. |
+| S4 | Durasi interaksi keyboard tertinggi **2.653,13 ms**; terdapat **47** `RunTask` >=50 ms, terlama **1.555,63 ms**. LCP soft-navigation terakhir sekitar **33.517 ms** dan CLS maksimum **0,6116**. | Trace mendukung halaman masih terblokir saat voucher, tetapi tidak memverifikasi long task 7.750 ms atau TBT 100.184 ms. P-04 perlu mengukur progres per batch dan respons input sesudah perubahan. |
+| S5 | Terdapat **77** `RunTask` >=50 ms, terlama **901,58 ms**, **6.999** event `Layout`, dan CLS maksimum **0,8220**. | Raw trace mendukung adanya beban layout dan masalah visual, tetapi tidak menyediakan hitungan frame >50 ms 11.551 atau INP 1.032 ms secara langsung. Angka frame harus diambil dari track Frames/alat ukur. |
+| S6 | Terdapat **27** `RunTask` >=50 ms, terlama **895,58 ms**, **10.029** event `Layout`, dan CLS maksimum **0,6117**. | Raw trace menunjukkan aktivitas saat idle, bukan bukti CPU 100%. Klaim aktivitas main thread mendekati 100% harus disertai CPU track; sesudah perbaikan perlu membandingkan waktu task dengan total durasi rekaman. |
+
+### Aturan interpretasi dan tindak lanjut pengukuran
+
+1. **Jangan mencampur sumber bukti.** Angka dari `HASIL TRACE WEBSITE.docx`,
+   screenshot, raw JSON, dan log server harus diberi label sumber masing-masing.
+   Raw trace ini memiliki 1.500 URL `/img/p/*.svg` unik pada S0--S3, S5, dan S6;
+   S4 memiliki 2.131 pengiriman karena sebagian URL terkirim ulang.
+2. **Bagian “Sesudah perbaikan” baru diisi setelah ada trace pasangan** dengan
+   skenario, perangkat, viewport, throttling, dan jumlah pengulangan yang sama.
+   Isi minimalnya: hash commit, median tiga kali, nilai metrik yang sama dengan
+   baseline, serta prediksi yang tercapai atau meleset.
+3. **Metrik yang tidak ada di raw JSON tidak boleh direkonstruksi sebagai fakta.**
+   Jumlah pesanan S3 harus berasal dari log server; TBT, hitungan frame >50 ms,
+   dan persentase CPU harus berasal dari ringkasan/track Performance atau Alat
+   Ukur TokoKilat.
+4. **Koreksi penting terhadap target:** “tidak ada long task >100 ms” berarti
+   tidak boleh ada task berdurasi 100 ms atau lebih selama interaksi. Jangan
+   menggantinya dengan jumlah `RunTask` total, karena trace juga mencatat task
+   internal browser yang tidak selalu merupakan long task aplikasi.
+
 ---
 
 ## P-01: Input pencarian "sepatu" tersendat dan lambat (Input Responsiveness)

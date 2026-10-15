@@ -27,6 +27,10 @@ function buatKartu(produk) {
   const gambar = document.createElement('img');
   gambar.src = produk.gambar;
   gambar.alt = produk.nama;
+  // TK-1081: lazy loading natif — browser hanya mengunduh gambar yang mendekati viewport.
+  // Tanpa ini, semua 3.000–5.000 gambar di-request sekaligus (5.016 req, 4.6 MB, LCP > 45 dtk).
+  gambar.loading = 'lazy';
+  gambar.decoding = 'async';
   media.append(gambar);
 
   const badan = el('div', 'kartu-badan');

@@ -66,24 +66,7 @@ function gambarPanel() {
 }
 
 export function tambahKeKeranjang(produk, tombol) {
-  const konfig = salinDalam(KONFIG);
-  const keranjang = bacaKeranjang();
-  const riwayat = bacaRiwayat();
-
-  const ada = keranjang.find((item) => item.id === produk.id);
-  if (ada) ada.jumlah = Math.min(ada.jumlah + 1, konfig.maksPerProduk);
-  else keranjang.push({ id: produk.id, nama: produk.nama, harga: hargaSetelahDiskon(produk), jumlah: 1 });
-
-  riwayat.push({ t: Date.now(), jenis: 'keranjang', id: produk.id, nama: produk.nama, kategori: produk.kategori, harga: produk.harga });
-
-  // Tim data minta konteks selengkap mungkin di setiap event.
-  window.Lacak.kirim('add_to_cart', { produk, keranjang, riwayat, sumber: konfig.sumber });
-
-  simpanKeranjang(keranjang);
-  simpanRiwayat(riwayat);
-
-  // Data sudah aman tersimpan, baru tampilan diperbarui.
-  perbaruiLencana();
+  // 1. Optimistic UI Feedback: Beri respons visual seketika sebelum memproses data
   tombol.textContent = 'Ditambahkan ✓';
   tombol.classList.add('sudah');
   setTimeout(() => {
@@ -91,26 +74,71 @@ export function tambahKeKeranjang(produk, tombol) {
     tombol.classList.remove('sudah');
   }, 1500);
   tampilkanToast('Ditambahkan ke keranjang: ' + produk.nama);
+
+  // 2. Jadwalkan proses state keranjang ke makrotask berikutnya
+  setTimeout(() => {
+    const konfig = salinDalam(KONFIG);
+    const keranjang = bacaKeranjang();
+    const ada = keranjang.find((item) => item.id === produk.id);
+
+    if (ada) ada.jumlah = Math.min(ada.jumlah + 1, konfig.maksPerProduk);
+    else keranjang.push({ id: produk.id, nama: produk.nama, harga: hargaSetelahDiskon(produk), jumlah: 1 });
+
+    simpanKeranjang(keranjang);
+    perbaruiLencana(); // Update lencana navbar
+
+    // 3. Jadwalkan I/O riwayat & SDK Lacak yang berat ke akhir antrean
+    setTimeout(() => {
+      const riwayat = bacaRiwayat();
+      const entriBaru = { t: Date.now(), jenis: 'keranjang', id: produk.id, nama: produk.nama, kategori: produk.kategori, harga: produk.harga };
+      riwayat.push(entriBaru);
+      simpanRiwayat(riwayat);
+
+      // 4. Batasi payload data analitik
+      if (window.Lacak) {
+        window.Lacak.kirim('add_to_cart', { produk, keranjang, riwayat: [entriBaru], sumber: konfig.sumber });
+      }
+    }, 0);
+  }, 0);
 }
 
+const pesananBerjalan = new Set();
+
 export async function beliSekarang(produk, tombol) {
-  const konfig = salinDalam(KONFIG);
-  const riwayat = bacaRiwayat();
-  riwayat.push({ t: Date.now(), jenis: 'beli', id: produk.id, nama: produk.nama, kategori: produk.kategori, harga: produk.harga });
-  window.Lacak.kirim('begin_checkout', { produk, riwayat, sumber: konfig.sumber });
-  simpanRiwayat(riwayat);
+  // 1. Cek lock proteksi: Cegah klik ganda jika produk sedang diproses
+  if (pesananBerjalan.has(produk.id)) return;
+  pesananBerjalan.add(produk.id);
 
-  const respons = await fetch('/api/pesanan', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ produkId: produk.id, nama: produk.nama }),
-  });
-  const pesanan = await respons.json();
+  // 2. Segera nonaktifkan tombol dan ubah indikator visual
+  tombol.disabled = true;
+  tombol.textContent = 'Memproses...';
 
-  tombol.textContent = 'Dipesan ✓';
-  setTimeout(() => { tombol.textContent = 'Beli sekarang'; }, 1500);
-  tampilkanToast('Pesanan ' + pesanan.id + ' dibuat: ' + produk.nama);
-  perbaruiLencanaPesanan();
+  try {
+    const konfig = salinDalam(KONFIG);
+    const riwayat = bacaRiwayat();
+    riwayat.push({ t: Date.now(), jenis: 'beli', id: produk.id, nama: produk.nama, kategori: produk.kategori, harga: produk.harga });
+    window.Lacak.kirim('begin_checkout', { produk, riwayat, sumber: konfig.sumber });
+    simpanRiwayat(riwayat);
+
+    const respons = await fetch('/api/pesanan', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ produkId: produk.id, nama: produk.nama }),
+    });
+
+    const pesanan = await respons.json();
+
+    tombol.textContent = 'Dipesan ✓';
+    tampilkanToast('Pesanan ' + pesanan.id + ' dibuat: ' + produk.nama);
+    perbaruiLencanaPesanan();
+  } finally {
+    // 3. Pastikan state dikembalikan setelah selesai
+    setTimeout(() => {
+      tombol.textContent = 'Beli sekarang';
+      tombol.disabled = false;
+      pesananBerjalan.delete(produk.id);
+    }, 1500);
+  }
 }
 
 export async function perbaruiLencanaPesanan() {

@@ -43,10 +43,6 @@ function pasangTeksBerjalan() {
 }
 
 async function pasangBannerPromo() {
-  // TK-1078: wadah #banner-promo sudah ada di HTML sejak awal (min-height disiapkan di CSS)
-  // sehingga tidak ada elemen baru yang disisipkan dan menggeser layout (CLS = 0).
-  const wadahBanner = $('#banner-promo');
-
   const respons = await fetch('/api/promo');
   const promo = await respons.json();
 
@@ -61,9 +57,7 @@ async function pasangBannerPromo() {
   });
   banner.append(teks, tombol);
 
-  // Ganti isi wadah (termasuk skeleton) dengan konten asli — tanpa menggeser elemen lain.
-  wadahBanner.innerHTML = '';
-  wadahBanner.append(banner);
+  $('#utama').prepend(banner);
 }
 
 export function pasangPromo() {

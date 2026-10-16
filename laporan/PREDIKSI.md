@@ -255,10 +255,18 @@ viewport Responsive, dan sumber `DevTools/TraceEvents`.
 
 ### Sesudah perbaikan
 
-- **Hash commit perbaikan:** *(diisi setelah perbaikan)*
-- **Hasil ukur (median 3 kali):** *(diisi setelah perbaikan)*
-- **Prediksi vs kenyataan:** *(diisi setelah perbaikan)*
-- **Efek samping yang muncul:** *(diisi setelah perbaikan)*
+- **Hash commit perbaikan:** `bec8e36`
+- **Hasil ukur (median 3 kali):**
+  - Long task terlama: **98 ms** (memenuhi target <= 100 ms).
+  - Total Blocking Time (TBT): **823 ms** (turun 91% dari baseline 9.603 ms).
+  - Frame drop > 50 ms per 10 dtk: **75x** (turun dari 298x terburuk 567 ms; frame tersisa terjadi saat scroll cepat ekstrem melewati 5.000 produk akibat decoding SVG di CPU 4x slowdown).
+  - CLS: **0** (stabil).
+  - INP: **128 ms** (memenuhi target <= 200 ms).
+- **Prediksi vs kenyataan:**
+  - Prediksi terbukti: Long task berhasil ditekan hingga di bawah 100 ms (98 ms) dan siklus layout thrashing tereliminasi berkat `IntersectionObserver` dan eliminasi transisi `margin-top`.
+  - Waktu total pemblokiran rendering turun lebih dari 90%.
+- **Efek samping yang muncul:**
+  - Kartu produk yang baru pertama kali muncul ke viewport membutuhkan waktu rendering sepersekian milidetik karena penggunaan `content-visibility: auto`, namun momentum scrolling tetap mulus tanpa stuttering.
 
 ---
 
@@ -294,10 +302,19 @@ viewport Responsive, dan sumber `DevTools/TraceEvents`.
 
 ### Sesudah perbaikan
 
-- **Hash commit perbaikan:** *(diisi setelah perbaikan)*
-- **Hasil ukur (median 3 kali):** *(diisi setelah perbaikan)*
-- **Prediksi vs kenyataan:** *(diisi setelah perbaikan)*
-- **Efek samping yang muncul:** *(diisi setelah perbaikan)*
+- **Hash commit perbaikan:** `bec8e36`
+- **Hasil ukur (median 3 kali):**
+  - Aktivitas JavaScript Main Thread saat idle: **90 ms** dari total 11,6 detik rekaman (~1% utilisasi CPU, mendekati 0%).
+  - Long task terlama: **56–77 ms** (memenuhi target <= 100 ms).
+  - Total Blocking Time (TBT): **128 ms** (dan 16 ms pada pengujian kedua).
+  - Frame > 50 ms per 10 dtk: **0–9x** (turun drastis dari >100x / CPU 100%).
+  - CLS: **0,004** (target <= 0,1 terpenuhi).
+  - INP: **128 ms** (target <= 200 ms terpenuhi).
+- **Prediksi vs kenyataan:**
+  - Prediksi terbukti akurat: Pemindahan teks berjalan ke CSS `@keyframes transform: translateX` berhasil mengisolasi animasi ke Compositor Thread (GPU) sehingga Main Thread sepenuhnya bebas saat halaman diam.
+  - Penurunan interval hitung mundur ke 1 Hz dan penambahan event `visibilitychange` mengeliminasi beban komputasi di latar belakang saat tab diminimize atau tidak aktif.
+- **Efek samping yang muncul:**
+  - Angka perseratus detik pada lencana hitung mundur tidak lagi berputar cepat (ditampilkan tetap '00'), namun kompensasinya perangkat tetap dingin dan daya baterai tidak terkuras.
 
 ---
 

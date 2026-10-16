@@ -9,19 +9,22 @@ export function el(tag, kelas, teks) {
   return node;
 }
 
+const pemformatRupiah = new Intl.NumberFormat('id-ID', {
+  style: 'currency',
+  currency: 'IDR',
+  maximumFractionDigits: 0,
+});
+
 export function formatRupiah(angka) {
-  const pemformat = new Intl.NumberFormat('id-ID', {
-    style: 'currency',
-    currency: 'IDR',
-    maximumFractionDigits: 0,
-  });
-  return pemformat.format(angka);
+  return pemformatRupiah.format(angka);
 }
 
+
 export function formatRibuan(angka) {
-  if (angka >= 1000) return (Math.floor(angka / 100) / 10).toLocaleString('id-ID') + ' rb';
+  if (angka >= 1000) return String(Math.floor(angka / 100) / 10).replace('.', ',') + ' rb';
   return String(angka);
 }
+
 
 export function hargaSetelahDiskon(produk) {
   return Math.round((produk.harga * (100 - produk.diskon)) / 100 / 100) * 100;
@@ -54,4 +57,15 @@ export function tampilkanToast(pesan) {
   toast.classList.add('tampil');
   clearTimeout(pengaturWaktuToast);
   pengaturWaktuToast = setTimeout(() => toast.classList.remove('tampil'), 2600);
+}
+
+// TK-1041: Fungsi debounce untuk menunda eksekusi callback sampai jeda pengetikan berhenti
+export function debounce(fungsi, tunggu = 200) {
+  let pengaturWaktu;
+  const debounced = function (...args) {
+    clearTimeout(pengaturWaktu);
+    pengaturWaktu = setTimeout(() => fungsi.apply(this, args), tunggu);
+  };
+  debounced.batal = () => clearTimeout(pengaturWaktu);
+  return debounced;
 }

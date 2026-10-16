@@ -6,6 +6,7 @@ import { $ } from './util.js';
 
 const sudahTercatat = new Set();
 
+
 // TK-1063: Gunakan IntersectionObserver untuk mendeteksi kartu yang masuk layar.
 // Browser menangani kalkulasi irisan di luar siklus layout sinkron, tanpa memicu
 // Forced Synchronous Layout (Layout Thrashing) di Main Thread.
@@ -44,6 +45,16 @@ function perbaruiTinggi() {
   tinggiDokumen = Math.max(document.documentElement.scrollHeight - window.innerHeight, 1);
 }
 
+let jadwalTinggi = false;
+function jadwalPerbaruiTinggi() {
+  if (jadwalTinggi) return;
+  jadwalTinggi = true;
+  requestAnimationFrame(() => {
+    perbaruiTinggi();
+    jadwalTinggi = false;
+  });
+}
+
 export function periksaGulir() {
   // Throttling dengan requestAnimationFrame: sinkronkan pembaruan visual
   // header dan bar progres dengan refresh rate tampilan layar (1 frame per render).
@@ -73,7 +84,7 @@ export function pasangGulir() {
   // dapat menggulir layar secara instan tanpa menunggu eksekusi JavaScript.
   window.addEventListener('scroll', periksaGulir, { passive: true });
   window.addEventListener('resize', () => {
-    perbaruiTinggi();
+    jadwalPerbaruiTinggi();
     periksaGulir();
   }, { passive: true });
 
@@ -82,7 +93,7 @@ export function pasangGulir() {
   const kisi = $('#kisi');
   if (kisi) {
     const mutasi = new MutationObserver((daftarMutasi) => {
-      perbaruiTinggi();
+      jadwalPerbaruiTinggi();
       for (const m of daftarMutasi) {
         for (const node of m.addedNodes) {
           if (node.nodeType === 1 && node.classList.contains('kartu')) {

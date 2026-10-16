@@ -76,7 +76,7 @@ button { cursor: pointer; }
 .progres { background: var(--putih); border: 1.5px solid var(--garis); border-radius: 10px; padding: 12px 14px; margin-bottom: 12px; }
 .progres-teks { font-weight: 600; margin-bottom: 8px; }
 .progres-jalur { height: 10px; background: var(--kabut); border-radius: 99px; overflow: hidden; }
-.progres-isi { height: 100%; width: 0; background: var(--hijau); }
+.progres-isi { height: 100%; width: 0; background: var(--hijau); transition: width .1s ease-out; }
 
 .ringkasan { margin: 0 0 12px; color: var(--abu); }
 
@@ -99,7 +99,8 @@ button { cursor: pointer; }
 .kartu-media { display: block; background: var(--kabut); }
 .kartu-media img { display: block; width: 100%; height: auto; }
 .kartu-badan { display: flex; flex-direction: column; gap: 6px; padding: 10px; flex: 1; }
-.kartu-judul { margin: 0; font-size: 14px; font-weight: 500; line-height: 1.35; overflow: hidden; }
+/* TK-1041: min-height 2.7em (2 baris) memastikan keselarasan tinggi kartu tanpa layout thrashing JS */
+.kartu-judul { margin: 0; font-size: 14px; font-weight: 500; line-height: 1.35; overflow: hidden; min-height: 2.7em; }
 .harga { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; }
 .harga-kini { font-size: 17px; font-weight: 800; color: var(--merah); }
 .harga-asli { font-size: 12px; color: var(--abu); text-decoration: line-through; }

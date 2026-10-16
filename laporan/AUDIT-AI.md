@@ -196,6 +196,61 @@ Branch atau commit tempat usulan diterapkan: `dev` — commit `e058a25` (fix TK-
 
 ---
 
+## A-07: Perbaikan Tiket TK-1041: Input Pencarian Tersendat / Hang (Skenario S1)
+
+- **Tiket yang diminta diperbaiki:** TK-1041 (Input pencarian "sepatu" tersendat dan lambat, Skenario S1)
+- **Prompt yang diberikan ke AI:**
+  "Tolong perbaiki fungsi pencarian dan render katalog agar pengetikan tidak lag dan INP turun di bawah 200 ms."
+- **Usulan AI:**
+  AI menyarankan untuk menambahkan `requestIdleCallback(renderBatchBerikutnya, { timeout: 100 })` dengan ukuran batch 60 kartu untuk merender sisa 3.000 produk di background secara otomatis, serta membungkus pemanggilan analitik ke dalam `setTimeout(() => window.Lacak.kirim('search', ...), 0)`:
+  ```js
+  // Usulan awal AI:
+  function jadwalkanBatch() {
+    requestIdleCallback(renderBatchBerikutnya, { timeout: 100 });
+  }
+  setTimeout(() => window.Lacak.kirim('search', { kata, jumlah }), 0);
+  ```
+- **Jenis masalah pada usulan:**
+  - [X] Tidak lengkap (gejala awal berkurang namun menimbulkan bottleneck baru)
+  - [X] Menimbulkan regresi (menghasilkan ratusan Long Task baru dan lonjakan Total Blocking Time)
+- **Bukti / Trace:**
+  * *Trace DevTools:* Panel alat ukur merekam akumulasi **108x Long Task** dengan total waktu blokir (TBT) mencapai **6.087 ms**, serta 106 frame lambat (> 50 ms).
+  * *Mekanisme Regresi:* Opsi `{ timeout: 100 }` pada `requestIdleCallback` memaksa browser mengeksekusi batch 60 kartu setiap 100 ms meskipun Main Thread sedang sibuk menerima input keyboard pengguna. Setiap batch memakan waktu 55–80 ms CPU, sehingga setiap batch menjadi long task.
+  * *Lonjakan INP Keyboard:* Pemanggilan `window.Lacak.kirim('search')` via `setTimeout(..., 0)` mengeksekusi loop hashing 2.000.000 iterasi di Main Thread (~514 ms). Akibatnya, ketikan karakter berikutnya tertahan di Task Queue selama 514 ms, menghasilkan INP **560 ms** (jauh di atas batas 200 ms).
+- **Mengapa AI bisa keliru di sini:**
+  AI mengira `{ timeout: 100 }` adalah pengaman agar rendering tidak tertunda selamanya, tanpa menyadari bahwa timeout justru memaksa browser mengorbankan kelancaran input pengguna (*input priority*). AI juga tidak membaca trace atau menginspeksi berkas SDK vendor (`lacak.min.js`) yang melakukan komputasi berat 2 juta iterasi di Main Thread.
+- **Perbaikan yang benar menurut tim:**
+  1. Mengganti background batching eager dengan **on-demand progressive rendering via sentinel `IntersectionObserver`**. Kartu tambahan hanya dimuat saat pengguna benar-benar menggulir layar mendekati bawah (36 kartu awal dirender instan < 10 ms).
+  2. Menerapkan *debounce* 150 ms pada input dan men-cache hasil normalisasi string `_teksCari` sejak awal muat produk.
+  3. Mendebounce analitik `window.Lacak.kirim('search')` ke 1,5 detik (hanya dikirim setelah pengguna berhenti mengetik) serta meng-cache fingerprint statis perangkat sehingga pemanggilan analitik hanya memakan waktu 0,002 ms.
+  * *Hasil Pengukuran:* INP turun ke **~45–120 ms** (target $\le 200\text{ ms}$ tercapai), dan tidak ada long task $> 100\text{ ms}$ selama pengetikan.
+
+---
+
+## A-08: Perbaikan Tiket TK-1057: Perhitungan Voucher Beku (Skenario S4)
+
+- **Tiket yang diminta diperbaiki:** TK-1057 (Penerapan voucher KILAT1212 membekukan halaman, Skenario S4)
+- **Prompt yang diberikan ke AI:**
+  "Tolong atasi masalah tombol voucher KILAT1212 yang membuat halaman macet dan progress bar langsung loncat dari 0% ke 100%."
+- **Usulan AI:**
+  AI menyarankan untuk menambahkan `await new Promise(r => setTimeout(r, 0))` di dalam loop per produk dan di akhir memanggil `renderProduk(keadaan.ditampilkan)`.
+- **Jenis masalah pada usulan:**
+  - [X] Tidak lengkap (komputasi tetap memakan waktu > 7 detik karena loop redundan tidak diperiksa)
+  - [X] Menimbulkan regresi (re-render destruktif di akhir kalkulasi memicu Layout Freeze)
+- **Bukti / Trace:**
+  * *Trace DevTools:* Panel Performance menunjukkan Main Thread tetap terbebani hingga 7.750 ms karena di dalam `hitungHargaPromo` terdapat loop `for (let i = 0; i < 40; i++) simulasiCicilan(...)` yang dieksekusi 40 kali secara redundan untuk setiap produk (3.000 × 40 = 120.000 kali perhitungan cicilan!).
+  * *Trace Rendering:* Memanggil `renderProduk(keadaan.ditampilkan)` di akhir kalkulasi menghancurkan 3.000 kartu DOM lama dan membangun kembali 3.000 kartu baru, memicu long task layout sebesar ratusan milidetik tepat saat notifikasi toast muncul.
+- **Mengapa AI bisa keliru di sini:**
+  AI hanya fokus pada sintaks asinkron (mengganti microtask ke makrotask) tetapi tidak mengaudit efisiensi algoritma di dalam fungsi bisnis `hitungHargaPromo`. AI juga memiliki bias merender ulang seluruh komponen dari nol daripada melakukan pembaruan lokal (*in-place DOM mutation*).
+- **Perbaikan yang benar menurut tim:**
+  1. Mengaudit dan menghapus loop redundan 40x `simulasiCicilan` di `hitungHargaPromo`, memangkas durasi komputasi agregat dari > 7 detik menjadi < 900 ms.
+  2. Menerapkan **Task Chunking** (batch 50 produk per chunk $\approx 8\text{ ms}$ CPU) dengan `await serahkanKeEventLoop()`, memberikan *Rendering Opportunity* berkala bagi browser untuk menggambar bar progres 0% $\to$ 100% dan memproses ketikan di kolom pencarian tanpa jeda.
+  3. Memperbarui harga voucher secara in-place via `perbaruiHargaVoucherDiKartu()` pada elemen kartu yang sudah ada di DOM tanpa menghancurkan struktur tree HTML.
+  4. Menambahkan jeda visual 150 ms saat mencapai 100% dan mendeferensiasi pengiriman analitik `apply_voucher`.
+  * *Hasil Pengukuran:* INP saat mengetik di kolom pencarian selama perhitungan voucher turun ke **~15–35 ms** (target $\le 200\text{ ms}$ tercapai), tidak ada long task $> 100\text{ ms}$, dan bar progres bergerak bertahap secara mulus.
+
+---
+
 ## Refleksi (maks. 200 kata)
 
 AI (Antigravity / Claude) paling membantu dalam tahap **identifikasi awal dan implementasi cepat**: diberikan deskripsi tiket dan kode sumber, AI langsung menemukan baris penyebab yang masuk akal dan menghasilkan kode perbaikan yang sintaktis benar dalam hitungan detik. Untuk masalah yang rootcause-nya terlihat jelas dari kode (seperti `prepend()` penyebab CLS atau tidak adanya `loading="lazy"`), usulan AI akurat dan hemat waktu.

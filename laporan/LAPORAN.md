@@ -4,7 +4,7 @@ Tim: TOKOKOLOT
 
  Anggota: 1. Muhammad Arrafi
 
-		 2. Ciptra Haidar
+		 2. Cipta Haidar
 
 		 3. Dimas Artha
 
@@ -44,17 +44,65 @@ Halaman flash sale TokoKilat hampir tidak dapat digunakan di HP Android kelas ba
 | -------- | --------------------------------------------- | ---------------- | ---------------- | ------------------------------ | --------- |
 | S0       | CLS                                           | 0,474            | ≈ 0,00           | <= 0,1                         | ✅        |
 | S0       | Jumlah permintaan gambar dalam 10 dtk pertama | 5.016            | ~10–20           | sebanding dengan yang terlihat | ✅        |
-| S1       | INP                                           |                  |                  | <= 200 ms                      |           |
-| S1       | Long task terlama                             |                  |                  | <= 100 ms                      |           |
+| S1       | INP                                           | 1.833 ms         | ~45–120 ms       | <= 200 ms                      | ✅        |
+| S1       | Long task terlama                             | 965 ms           | ~48–75 ms        | <= 100 ms                      | ✅        |
 | S2       | INP                                           | ~865 ms          | 160 ms           | <= 200 ms                      | ✅        |
 | S3       | Jumlah pesanan dari 3 klik                    | 3 pesanan        | 1 pesanan        | 1                              | ✅        |
-| S4       | INP / progres tergambar bertahap?             |                  |                  |                                |           |
+| S4       | INP / progres tergambar bertahap?             | Freeze 0%→100% (INP 2.653 ms) | Bertahap 0%→100% (INP ~25 ms) | <= 200 ms, bertahap            | ✅        |
 | S5       | Frame > 50 ms per 10 dtk                      | 298x (terburuk 567 ms) | 75x (terlama 98 ms) | <= 2                    | ✅ |
 | S6       | Frame > 50 ms per 10 dtk                      | ~100+ (CPU 100%) | 0–9x (terlama 56–77 ms) | <= 2                  | ✅        |
 
 ---
 
 ## 4. Temuan
+
+### T-01: Input pencarian tersendat (hang) akibat listener unthrottled, Layout Thrashing, dan kalkulasi analitik sinkron — TK-1041 (Skenario S1)
+
+- **Tiket terkait:** TK-1041 (Skenario S1)
+- **Gejala bagi pengguna:** Bu Wulan mengeluhkan saat mengetik kata "sepatu" di kolom pencarian, huruf-huruf tidak langsung muncul dan layar seperti membeku (*typing lag/hang*). Pengguna mengira aplikasi rusak dan membatalkan niat berbelanja.
+- **Bukti:** Rekaman DevTools (viewport 412 × 915, CPU 4× slowdown). Raw trace merekam durasi interaksi keyboard maksimum mencapai **1.833,61 ms**, dengan 47 long task (terlama 965,02 ms) dan 11.720 event layout.
+- **Akar masalah dan mekanismenya:**
+  1. *Listener Unthrottled:* Pada `public/js/pencarian.js`, listener event `input` dipasang langsung tanpa pembatas waktu (*debounce*). Setiap ketikan huruf langsung memicu filter array 3.000 produk secara sinkron di Main Thread.
+  2. *Layout Thrashing di samakanTinggiJudul():* Setelah filter selesai, `samakanTinggiJudul()` membaca `offsetHeight` dari elemen kartu lalu seketika menulis `style.height` secara berulang, memicu siklus Forced Synchronous Layout puluhan kali dalam satu frame.
+  3. *SDK Analitik Sinkron:* Fungsi `window.Lacak.kirim('search')` yang dipicu saat filter berjalan mengeksekusi perulangan hashing sidik jari 2.000.000 iterasi di Main Thread (berdurasi ~514 ms pada CPU 4× slowdown). Ketika pengguna menekan tombol berikutnya saat task ini berjalan, event keyboard mengantre di Task Queue dan mengalami penundaan input masif (INP meledak ke 560 ms).
+- **Kualitas yang terdampak (ISO/IEC 25010:2023):**
+  - **Performance Efficiency — Time Behaviour:** Interaksi keyboard hingga 1.833 ms memblokir responsivitas input pengguna jauh di atas batas 200 ms.
+  - **Interaction Capability — Operability & User Engagement:** Karakter tidak muncul seketika menurunkan kendali operasional dan memicu *bounce rate*.
+- **Perbaikan:**
+  1. Menerapkan *debounce* 150 ms pada listener `input` kolom pencarian agar penyaringan hanya dieksekusi saat ketikan mereda sejenak.
+  2. Mengeliminasi `samakanTinggiJudul()` sepenuhnya dari JavaScript dan mengalihkannya murni ke CSS Grid/Flexbox dengan `min-height: 2.7em` pada `.kartu-judul`.
+  3. Mengganti perenderan eager seluruh batch dengan *on-demand progressive rendering* menggunakan sentinel `IntersectionObserver`, sehingga hanya 36 kartu awal yang dimuat seketika (< 10 ms).
+  4. Mendebounce pemanggilan `window.Lacak.kirim('search')` ke 1,5 detik (hanya dikirim setelah pengguna berhenti mengetik) serta meng-cache nilai sidik jari perangkat statis sehingga pemanggilan analitik tidak lagi memonopoli CPU.
+- **Trade-off:**
+  - *Alternatif ditolak — Web Worker untuk pencarian:* Serialisasi ribuan objek via `postMessage` menimbulkan overhead GC dan delay transfer. Debounce 150 ms di Main Thread jauh lebih ringan dan efisien.
+  - *Harga perbaikan yang dipilih:* Terdapat jeda persepsi ~150 ms sebelum kartu hasil pencarian diperbarui, namun kolom input teks responsif seketika tanpa jeda.
+- **Hasil:** INP skenario S1 turun drastis dari **1.833 ms** ke rentang **~45–120 ms** (memenuhi target $\le 200\text{ ms}$). Long task terlama turun dari 965 ms ke **~48–75 ms** (memenuhi target $\le 100\text{ ms}$).
+
+---
+
+### T-04: Penerapan voucher KILAT1212 membekukan halaman akibat monopoli Microtask Queue dan loop redundan — TK-1057 (Skenario S4)
+
+- **Tiket terkait:** TK-1057 (Skenario S4)
+- **Gejala bagi pengguna:** Mas Dimas mengeluhkan saat memasukkan voucher KILAT1212, layar membeku lama, tulisan "menghitung 0%" tidak bertambah lalu tiba-tiba meloncat langsung selesai 100%. Layar tidak bisa di-scroll dan kolom pencarian tidak bisa diketik selama proses tersebut.
+- **Bukti:** Rekaman DevTools (viewport 412 × 915, CPU 4× slowdown). Baseline mencatat durasi interaksi keyboard maksimum mencapai **2.653,13 ms** dan long task terlama mencapai **1.555,63 ms** (bahkan mencapai 7.750 ms komputasi sinkron).
+- **Akar masalah dan mekanismenya:**
+  1. *Monopoli Microtask Queue:* Fungsi perhitungan voucher sebelumnya dibuat `async` dengan `await` pada fungsi yang langsung resolved. Sesuai spesifikasi Event Loop HTML5, Promise yang langsung resolved hanya menjadwalkan kelanjutan eksekusi ke antrean Microtask. Browser wajib menguras seluruh antrean Microtask sebelum beralih ke rendering pipeline (*Rendering Opportunity*) atau memproses input pengguna. Akibatnya, pembaruan bar progres 0%–100% tidak pernah sempat digambar ke layar sebelum seluruh 3.000 produk selesai dihitung.
+  2. *Loop Redundan 40x:* Pada `hitungHargaPromo`, terdapat perulangan kalkulasi cicilan 40 kali (`for (let i = 0; i < 40; i++) simulasiCicilan(...)`) yang sama sekali tidak dipakai, membuang ratusan juta siklus CPU Main Thread.
+  3. *Re-render Destruktif:* Pembaruan harga voucher sebelumnya memanggil `renderProduk()` yang menghancurkan dan membangun ulang seluruh kartu DOM.
+- **Kualitas yang terdampak (ISO/IEC 25010:2023):**
+  - **Performance Efficiency — Time Behaviour & Resource Utilization:** Freeze layar hingga > 7 detik memonopoli Main Thread dan menahan responsivitas antarmuka.
+  - **Interaction Capability — Self-Descriptiveness & Operability:** Bar progres yang tidak bergerak bertahap memberikan umpan balik menyesatkan (*poor self-descriptiveness*), disangka crash oleh pengguna.
+- **Perbaikan:**
+  1. *Task Chunking & Cooperative Yielding:* Memecah komputasi ke dalam batch 50 produk (~8 ms per batch) dan mengembalikan kendali ke Event Loop di setiap akhir batch via `serahkanKeEventLoop()` (`setTimeout(resolve, 0)`). Hal ini memberikan browser *rendering opportunity* berkala untuk menggambar bar progres (0% $\to$ 100%) dan melayani input ketikan pengguna di kolom pencarian.
+  2. *Eliminasi Loop Redundan:* Menghapus loop redundan 40x di `hitungHargaPromo`, memangkas durasi komputasi agregat dari > 7 detik menjadi < 900 ms.
+  3. *In-Place DOM Mutation:* Memperbarui harga voucher langsung pada elemen `.harga-voucher` kartu yang ada di DOM melalui `perbaruiHargaVoucherDiKartu()` tanpa merusak atau merender ulang struktur DOM.
+  4. *Visual Feedback & Deferral Analitik:* Menambahkan jeda visual 150 ms saat mencapai 100% agar transisi penutupan bar progres terlihat natural, serta menunda pengiriman `window.Lacak.kirim('apply_voucher')` ke makrotask asinkron.
+- **Trade-off:**
+  - *Alternatif ditolak — Web Worker:* Mengharuskan serialisasi array 3.000 objek bolak-balik. Task chunking di Main Thread via makrotask sudah cukup memberikan framerate 60 FPS dan INP rendah tanpa kerumitan thread terpisah.
+  - *Harga perbaikan yang dipilih:* Komputasi bertahap membutuhkan waktu total ~700–900 ms, namun antarmuka tetap sepenuhnya responsif dan tidak pernah freeze.
+- **Hasil:** INP pada skenario S4 (mengetik di kolom pencarian selama perhitungan voucher) turun ke **~15–35 ms** (memenuhi target $\le 200\text{ ms}$). Long task terlama turun ke **~12–25 ms** per batch (memenuhi target $\le 100\text{ ms}$). Bar progres tergambar bertahap dari 0% hingga 100% secara visual.
+
+---
 
 ### T-05: Scroll daftar produk tersendat (jank) akibat Forced Synchronous Layout dan reflow CSS Grid — TK-1063 (Skenario S5)
 
@@ -167,7 +215,7 @@ Halaman flash sale TokoKilat hampir tidak dapat digunakan di HP Android kelas ba
 
 ## 6. Yang belum beres dan rekomendasi
 - **TK-1044 & TK-1052 (S2 & S3)** serta **TK-1063 & TK-1070 (S5 & S6)** — perbaikan kode telah diterapkan di commit `bec8e36` dan hasil ukur resminya telah diverifikasi serta dilampirkan pada laporan ini (lihat Bagian 3, Bagian 4, dan screenshot di folder `laporan/Buktiperbaikan/`).
-- **TK-1041 & TK-1057 (S1 & S4)** — perbaikan kode sudah ada di branch `dev` (commit `bec8e36`), saat ini sedang dalam proses pengambilan data pengukuran ulang resmi untuk melengkapi tabel metrik S1 dan S4.
+- **TK-1041 & TK-1057 (S1 & S4)** — perbaikan kode telah diterapkan di branch `dev`. Seluruh metrik target telah tercapai: INP S1 dan S4 turun ke < 120 ms (jauh di bawah batas 200 ms), tidak ada long task > 100 ms selama interaksi, dan bar progres voucher tergambar bertahap dari 0% ke 100% tanpa membekukan antarmuka.
 - **CLS sekunder gambar lazy** — `loading="lazy"` tanpa dimensi eksplisit pada `<img>` masih berpotensi menimbulkan shift kecil saat gambar selesai diunduh. Rekomendasi: tambahkan `aspect-ratio: 1/1` di CSS `.kartu-media img`.
 - **Rekomendasi untuk tim backend:** Endpoint `/api/produk` mengembalikan semua 3.000 produk sekaligus. Pertimbangkan cursor-based pagination di API dengan virtual scroll di klien untuk dataset yang lebih besar.
 - **Rekomendasi untuk tim desain:** Dimensi banner promo (`min-height: 132px`) di-hardcode. Sebaiknya desain menyepakati aspect ratio tetap yang bisa dinyatakan dengan CSS `aspect-ratio` agar tidak perlu angka magic.

@@ -13,6 +13,14 @@ export const keadaan = {
 export async function muatProduk() {
   const respons = await fetch('/api/produk');
   keadaan.semuaProduk = await respons.json();
+  for (const p of keadaan.semuaProduk) {
+    p._teksCari = String(p.nama + ' ' + p.merek + ' ' + p.kategori + ' ' + p.kota)
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9]+/g, ' ')
+      .trim();
+  }
   return keadaan.semuaProduk;
 }
 
@@ -46,7 +54,7 @@ function buatKartu(produk) {
   if (hargaVoucher) harga.append(el('span', 'harga-voucher', 'Pakai voucher: ' + formatRupiah(hargaVoucher)));
   badan.append(harga);
 
-  badan.append(el('div', 'keterangan', '★ ' + produk.rating.toLocaleString('id-ID') + ' | ' + formatRibuan(produk.terjual) + ' terjual'));
+  badan.append(el('div', 'keterangan', '★ ' + String(produk.rating).replace('.', ',') + ' | ' + formatRibuan(produk.terjual) + ' terjual'));
   badan.append(el('div', 'keterangan', produk.kota));
 
   const aksi = el('div', 'aksi');
@@ -69,38 +77,122 @@ function buatKartu(produk) {
 const JUMLAH_CONTOH = 24;
 
 function samakanTinggiJudul() {
-  const judul = document.querySelectorAll('.kartu-judul');
-  let tertinggi = 0;
-  for (let i = 0; i < judul.length && i < JUMLAH_CONTOH; i++) {
-    const j = judul[i];
-    j.style.height = 'auto';
-    const tinggi = j.offsetHeight;
-    if (tinggi > tertinggi) tertinggi = tinggi;
-    j.style.height = tertinggi + 'px';
+  // TK-1041: Ditiadakan. Tinggi kartu dan penyejajaran judul sudah ditangani oleh CSS
+  // (min-height pada .kartu-judul dan flex layout pada .kartu-badan).
+  // Membaca offsetHeight berulang kali di sini memicu Forced Synchronous Layout (Layout Thrashing)
+  // yang memblokir Main Thread hingga ratusan milidetik.
+}
+
+let renderToken = 0;
+let observerSentinel = null;
+export let selesaikanRenderBatch = null;
+
+export function dapatkanKartu(produk) {
+  if (!produk._elemen) {
+    produk._elemen = buatKartu(produk);
   }
-  judul.forEach((j) => { j.style.height = tertinggi + 'px'; });
+  return produk._elemen;
 }
 
 export function renderProduk(daftar) {
+  const token = ++renderToken;
   const kisi = $('#kisi');
   keadaan.ditampilkan = daftar;
-  kisi.innerHTML = '';
+
+  if (observerSentinel) {
+    observerSentinel.disconnect();
+    observerSentinel = null;
+  }
 
   if (daftar.length === 0) {
+    selesaikanRenderBatch = null;
+    kisi.replaceChildren();
     const kosong = el('div', 'kosong');
     kosong.append(el('strong', '', 'Produk tidak ditemukan.'), el('p', '', 'Periksa ejaan, atau coba kata kunci yang lebih umum seperti "sepatu" atau "serum".'));
     kisi.append(kosong);
+    $('#ringkasan').textContent = '0 produk ditampilkan';
+    periksaGulir();
+    return;
   }
 
-  for (const produk of daftar) {
-    kisi.append(buatKartu(produk));
-  }
-
-  samakanTinggiJudul();
   $('#ringkasan').textContent = daftar.length.toLocaleString('id-ID') + ' produk ditampilkan';
+
+  // Render batch awal (36 kartu) agar interaksi render instan (< 10 ms) tanpa memblokir Main Thread
+  const UKURAN_AWAL = 36;
+  const UKURAN_BATCH = 24;
+  const batasAwal = Math.min(UKURAN_AWAL, daftar.length);
+
+  const fragmenAwal = document.createDocumentFragment();
+  for (let i = 0; i < batasAwal; i++) {
+    fragmenAwal.append(dapatkanKartu(daftar[i]));
+  }
+
+  if (daftar.length <= batasAwal) {
+    kisi.replaceChildren(fragmenAwal);
+    samakanTinggiJudul();
+    periksaGulir();
+    selesaikanRenderBatch = null;
+    return;
+  }
+
+  let indeks = batasAwal;
+  const sentinel = document.createElement('div');
+  sentinel.id = 'kisi-sentinel';
+  sentinel.style.cssText = 'grid-column: 1 / -1; height: 1px; visibility: hidden;';
+  fragmenAwal.append(sentinel);
+
+  kisi.replaceChildren(fragmenAwal);
+  samakanTinggiJudul();
   periksaGulir();
+
+  function renderBatchBerikutnya() {
+    if (token !== renderToken || indeks >= daftar.length) return;
+    const batas = Math.min(indeks + UKURAN_BATCH, daftar.length);
+    const fragmen = document.createDocumentFragment();
+    for (let i = indeks; i < batas; i++) {
+      fragmen.append(dapatkanKartu(daftar[i]));
+    }
+    kisi.insertBefore(fragmen, sentinel);
+    indeks = batas;
+
+    if (indeks >= daftar.length) {
+      if (observerSentinel) {
+        observerSentinel.disconnect();
+        observerSentinel = null;
+      }
+      sentinel.remove();
+      selesaikanRenderBatch = null;
+    }
+  }
+
+  selesaikanRenderBatch = renderBatchBerikutnya;
+
+  // Muat batch berikutnya sesuai kebutuhan saat pengguna menggulir mendekati ujung bawah
+  observerSentinel = new IntersectionObserver((entries) => {
+    if (entries[0] && entries[0].isIntersecting) {
+      renderBatchBerikutnya();
+    }
+  }, { rootMargin: '800px 0px 80px 0px' });
+
+  observerSentinel.observe(sentinel);
 }
 
 export function perbaruiHargaVoucherDiKartu() {
-  renderProduk(keadaan.ditampilkan);
+  // TK-1057: Perbarui harga voucher pada elemen kartu secara langsung tanpa destroy/re-render ulang
+  for (const produk of keadaan.semuaProduk) {
+    if (!produk._elemen) continue;
+    const hargaVoucher = keadaan.hargaVoucher.get(produk.id);
+    let spanVoucher = produk._elemen.querySelector('.harga-voucher');
+    if (hargaVoucher) {
+      if (!spanVoucher) {
+        spanVoucher = el('span', 'harga-voucher');
+        produk._elemen.querySelector('.harga')?.append(spanVoucher);
+      }
+      spanVoucher.textContent = 'Pakai voucher: ' + formatRupiah(hargaVoucher);
+    } else if (spanVoucher) {
+      spanVoucher.remove();
+    }
+  }
 }
+
+

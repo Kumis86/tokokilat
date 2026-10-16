@@ -14,8 +14,8 @@
 }
 
 * { box-sizing: border-box; }
-html { scroll-behavior: smooth; }
-body { margin: 0; font: 15px/1.45 var(--huruf); color: var(--tinta); background: var(--kabut); }
+html { scroll-behavior: smooth; overscroll-behavior-y: contain; }
+body { margin: 0; font: 15px/1.45 var(--huruf); color: var(--tinta); background: var(--kabut); overscroll-behavior-y: contain; }
 button, input, select { font: inherit; color: inherit; }
 button { cursor: pointer; }
 :focus-visible { outline: 3px solid var(--kilat); outline-offset: 2px; }
@@ -83,7 +83,8 @@ button { cursor: pointer; }
 
 /* ---------- kisi produk ---------- */
 .kisi { display: grid; grid-template-columns: repeat(auto-fill, minmax(168px, 1fr)); gap: 12px; }
-.kartu { position: relative; display: flex; flex-direction: column; background: var(--putih); border: 1px solid var(--garis); border-radius: 10px; overflow: hidden; opacity: 0; margin-top: 16px; transition: opacity .35s ease, margin-top .35s ease; }
+/* TK-1063: content-visibility melewati kalkulasi layout & paint untuk kartu offscreen */
+.kartu { position: relative; display: flex; flex-direction: column; background: var(--putih); border: 1px solid var(--garis); border-radius: 10px; overflow: hidden; opacity: 0; margin-top: 16px; transition: opacity .35s ease, margin-top .35s ease; content-visibility: auto; contain-intrinsic-size: auto 340px; }
 .kartu.terlihat { opacity: 1; margin-top: 0; }
 .kartu-media { display: block; background: var(--kabut); }
 .kartu-media img { display: block; width: 100%; height: auto; }

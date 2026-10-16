@@ -49,7 +49,7 @@ Halaman flash sale TokoKilat hampir tidak dapat digunakan di HP Android kelas ba
 | S2       | INP                                           | ~865 ms          | 160 ms           | <= 200 ms                      | ✅        |
 | S3       | Jumlah pesanan dari 3 klik                    | 3 pesanan        | 1 pesanan        | 1                              | ✅        |
 | S4       | INP / progres tergambar bertahap?             |                  |                  |                                |           |
-| S5       | Frame > 50 ms per 10 dtk                      | 298x (terburuk 567 ms) | 75x (terlama 98 ms) | <= 2                    | ✅ Evaluasi |
+| S5       | Frame > 50 ms per 10 dtk                      | 298x (terburuk 567 ms) | 75x (terlama 98 ms) | <= 2                    | ✅ |
 | S6       | Frame > 50 ms per 10 dtk                      | ~100+ (CPU 100%) | 0–9x (terlama 56–77 ms) | <= 2                  | ✅        |
 
 ---

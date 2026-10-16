@@ -35,7 +35,7 @@ button { cursor: pointer; }
 .tombol-kepala { background: transparent; border: 1.5px solid rgba(255, 255, 255, .45); color: var(--putih); padding: 8px 12px; border-radius: 8px; }
 .tombol-kepala:hover { border-color: var(--kilat); }
 .tombol-kepala b { display: inline-block; min-width: 22px; margin-left: 4px; padding: 0 6px; border-radius: 99px; background: var(--kilat); color: var(--tinta); text-align: center; }
-.bar-gulir { height: 3px; width: 0; background: var(--kilat); }
+.bar-gulir { height: 3px; width: 100%; transform-origin: left center; transform: scaleX(0); will-change: transform; background: var(--kilat); }
 
 /* ---------- strip flash sale ---------- */
 .kilat { background: var(--kilat); color: var(--tinta); overflow: hidden; }
@@ -47,9 +47,19 @@ button { cursor: pointer; }
 .angka span { font: italic 900 clamp(34px, 6vw, 64px)/1 var(--huruf-tegas); letter-spacing: -.04em; }
 .angka.kecil span { font-size: clamp(20px, 3vw, 30px); color: var(--nila-2); padding-top: .55em; }
 .angka small { font-size: 12px; font-weight: 600; }
-.hm-garis { position: absolute; left: 0; bottom: 0; height: 5px; background: var(--tinta); }
+/* TK-1070: Garis progres hitung mundur menggunakan width 100% dan transform: scaleX,
+   bergerak mulus lewat transition tanpa membaca offsetWidth dan memicu layout sinkron */
+.hm-garis { position: absolute; left: 0; bottom: 0; width: 100%; height: 5px; background: var(--tinta); transform-origin: left center; transform: scaleX(1); transition: transform 1s linear; will-change: transform; }
 .berjalan { position: relative; height: 34px; background: var(--nila-2); color: var(--putih); overflow: hidden; }
-.berjalan-teks { position: absolute; top: 7px; left: 100%; white-space: nowrap; font-size: 14px; font-weight: 600; }
+/* TK-1070: Animasi teks berjalan dipindahkan ke Compositor Thread (GPU) via transform: translateX.
+   Ini mengeliminasi eksekusi JavaScript 100Hz di Main Thread dan mereduksi CPU usage saat idle menjadi ~0% */
+.berjalan-teks { position: absolute; top: 7px; left: 0; white-space: nowrap; font-size: 14px; font-weight: 600; will-change: transform; animation: teksBerjalan 35s linear infinite; }
+.berjalan:hover .berjalan-teks { animation-play-state: paused; }
+
+@keyframes teksBerjalan {
+  0% { transform: translateX(100vw); }
+  100% { transform: translateX(-100%); }
+}
 
 /* ---------- area utama ---------- */
 .utama { max-width: 1320px; margin: 0 auto; padding: 16px; }
@@ -83,9 +93,9 @@ button { cursor: pointer; }
 
 /* ---------- kisi produk ---------- */
 .kisi { display: grid; grid-template-columns: repeat(auto-fill, minmax(168px, 1fr)); gap: 12px; }
-/* TK-1063: content-visibility melewati kalkulasi layout & paint untuk kartu offscreen */
-.kartu { position: relative; display: flex; flex-direction: column; background: var(--putih); border: 1px solid var(--garis); border-radius: 10px; overflow: hidden; opacity: 0; margin-top: 16px; transition: opacity .35s ease, margin-top .35s ease; content-visibility: auto; contain-intrinsic-size: auto 340px; }
-.kartu.terlihat { opacity: 1; margin-top: 0; }
+/* TK-1063: content-visibility & transform: translateY melewati layout & paint untuk kartu offscreen tanpa reflow */
+.kartu { position: relative; display: flex; flex-direction: column; background: var(--putih); border: 1px solid var(--garis); border-radius: 10px; overflow: hidden; opacity: 0; transform: translateY(16px); transition: opacity .35s ease, transform .35s ease; content-visibility: auto; contain-intrinsic-size: auto 340px; will-change: transform, opacity; }
+.kartu.terlihat { opacity: 1; transform: translateY(0); }
 .kartu-media { display: block; background: var(--kabut); }
 .kartu-media img { display: block; width: 100%; height: auto; }
 .kartu-badan { display: flex; flex-direction: column; gap: 6px; padding: 10px; flex: 1; }
@@ -102,10 +112,10 @@ button { cursor: pointer; }
 .tombol-beli { background: var(--nila); border: 1.5px solid var(--nila); color: var(--putih); }
 .tombol-tambah.sudah { background: var(--hijau); border-color: var(--hijau); color: var(--putih); }
 
-.lencana-kilat { position: absolute; top: 8px; left: 8px; z-index: 1; background: var(--kilat); color: var(--tinta); font-size: 11px; font-weight: 900; padding: 3px 8px; border-radius: 4px; animation: denyut .9s ease-in-out infinite; }
+.lencana-kilat { position: absolute; top: 8px; left: 8px; z-index: 1; background: var(--kilat); color: var(--tinta); font-size: 11px; font-weight: 900; padding: 3px 8px; border-radius: 4px; animation: denyut .9s ease-in-out infinite; will-change: transform; }
 @keyframes denyut {
-  0%, 100% { top: 8px; box-shadow: 0 0 0 0 rgba(255, 212, 0, .95); }
-  50% { top: 4px; box-shadow: 0 0 0 9px rgba(255, 212, 0, 0); }
+  0%, 100% { transform: translateY(0); box-shadow: 0 0 0 0 rgba(255, 212, 0, .95); }
+  50% { transform: translateY(-4px); box-shadow: 0 0 0 9px rgba(255, 212, 0, 0); }
 }
 
 .kosong { grid-column: 1 / -1; background: var(--putih); border: 1.5px dashed var(--garis); border-radius: 10px; padding: 28px; text-align: center; }

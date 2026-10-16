@@ -26,13 +26,23 @@ const observerKartu = new IntersectionObserver((entries) => {
   }
 
   if (impresiBaru.length && window.Lacak) {
-    window.Lacak.kirim('impression', { produk: impresiBaru });
+    const kirimImpresi = () => window.Lacak.kirim('impression', { produk: impresiBaru });
+    if ('requestIdleCallback' in window) {
+      requestIdleCallback(kirimImpresi, { timeout: 1000 });
+    } else {
+      setTimeout(kirimImpresi, 0);
+    }
   }
 }, {
   rootMargin: '80px 0px 80px 0px',
 });
 
 let jadwalAnimasi = false;
+let tinggiDokumen = 0;
+
+function perbaruiTinggi() {
+  tinggiDokumen = Math.max(document.documentElement.scrollHeight - window.innerHeight, 1);
+}
 
 export function periksaGulir() {
   // Throttling dengan requestAnimationFrame: sinkronkan pembaruan visual
@@ -49,9 +59,10 @@ export function periksaGulir() {
     if (kepala) kepala.classList.toggle('melayang', y > 8);
     if (keAtas) keAtas.hidden = y < 900;
 
-    const tinggiDokumen = document.documentElement.scrollHeight - window.innerHeight;
     if (bar) {
-      bar.style.width = (tinggiDokumen > 0 ? (y / tinggiDokumen) * 100 : 0) + '%';
+      if (!tinggiDokumen) perbaruiTinggi();
+      const rasio = Math.min(1, Math.max(0, y / tinggiDokumen));
+      bar.style.transform = `scaleX(${rasio})`;
     }
     jadwalAnimasi = false;
   });
@@ -61,13 +72,17 @@ export function pasangGulir() {
   // TK-1063: Pasang listener dengan { passive: true } agar Compositor Thread
   // dapat menggulir layar secara instan tanpa menunggu eksekusi JavaScript.
   window.addEventListener('scroll', periksaGulir, { passive: true });
-  window.addEventListener('resize', periksaGulir, { passive: true });
+  window.addEventListener('resize', () => {
+    perbaruiTinggi();
+    periksaGulir();
+  }, { passive: true });
 
   // Pantau penambahan kartu produk di #kisi secara otomatis & asinkron.
   // Dengan ini katalog.js tidak perlu diubah.
   const kisi = $('#kisi');
   if (kisi) {
     const mutasi = new MutationObserver((daftarMutasi) => {
+      perbaruiTinggi();
       for (const m of daftarMutasi) {
         for (const node of m.addedNodes) {
           if (node.nodeType === 1 && node.classList.contains('kartu')) {

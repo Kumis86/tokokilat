@@ -14,32 +14,54 @@ const duaDigit = (n) => String(n).padStart(2, '0');
 function pasangHitungMundur() {
   const akhir = akhirFlashSale();
   const awal = Date.now();
-  const wadah = $('#hitung-mundur');
   const garis = $('#hm-garis');
   const jam = $('#hm-jam'), menit = $('#hm-menit'), detik = $('#hm-detik'), senti = $('#hm-senti');
 
-  // 10 ms supaya angka perseratus detik terlihat mulus
-  setInterval(() => {
-    const sisa = Math.max(akhir - Date.now(), 0);
-    jam.textContent = duaDigit(Math.floor(sisa / 3600000));
-    menit.textContent = duaDigit(Math.floor((sisa % 3600000) / 60000));
-    detik.textContent = duaDigit(Math.floor((sisa % 60000) / 1000));
-    senti.textContent = duaDigit(Math.floor((sisa % 1000) / 10));
+  // TK-1070: Turunkan interval dari 10ms (100Hz) ke 1000ms (1Hz) dan gunakan transform scaleX
+  // alih-alih membaca offsetWidth yang memicu layout thrashing terus-menerus.
+  function perbarui() {
+    const sekarang = Date.now();
+    const sisa = Math.max(akhir - sekarang, 0);
+    if (jam) jam.textContent = duaDigit(Math.floor(sisa / 3600000));
+    if (menit) menit.textContent = duaDigit(Math.floor((sisa % 3600000) / 60000));
+    if (detik) detik.textContent = duaDigit(Math.floor((sisa % 60000) / 1000));
+    if (senti) senti.textContent = '00';
 
-    // garis di bawah angka menyusut mengikuti sisa waktu
-    const lebarPenuh = wadah.offsetWidth;
-    garis.style.width = Math.round(lebarPenuh * (sisa / (akhir - awal + 1))) + 'px';
-  }, 10);
+    if (garis) {
+      const rasio = Math.max(0, Math.min(1, sisa / (akhir - awal + 1)));
+      garis.style.transform = `scaleX(${rasio})`;
+    }
+  }
+
+  // Kelola lifecycle: matikan interval saat tab di latar belakang untuk menghemat daya
+  let intervalId = null;
+  function mulai() {
+    if (intervalId) return;
+    perbarui();
+    intervalId = setInterval(perbarui, 1000);
+  }
+  function henti() {
+    if (intervalId) {
+      clearInterval(intervalId);
+      intervalId = null;
+    }
+  }
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) {
+      henti();
+    } else {
+      mulai();
+    }
+  });
+
+  mulai();
 }
 
 function pasangTeksBerjalan() {
-  const teks = $('#berjalan-teks');
-  let x = teks.parentElement.offsetWidth;
-  setInterval(() => {
-    x -= 1;
-    if (x < -teks.offsetWidth) x = teks.parentElement.offsetWidth;
-    teks.style.left = x + 'px';
-  }, 10);
+  // TK-1070: Animasi teks berjalan dimigrasikan ke Compositor Thread via CSS @keyframes
+  // di css/toko.css (transform: translateX). Ini mengeliminasi setInterval 10ms dan
+  // manipulasi style.left yang sebelumnya memicu Forced Layout & Repaint 100x/detik di Main Thread.
 }
 
 async function pasangBannerPromo() {

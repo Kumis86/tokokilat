@@ -84,6 +84,33 @@ Branch atau commit tempat usulan diterapkan: `dev` — commit `e058a25` (fix TK-
 
 ---
 
+  ## A-03: Perbaikan Tiket TK-1044: Tombol Keranjang Lambat (Skenario S2)
+ -   **Prompt yang diberikan ke AI:** 
+    "Tolong perbaiki fungsi `tambahKeKeranjang` agar tidak nge-hang dan metrik INP turun di bawah 200ms."
+ -   **Usulan AI:** 
+    AI menyarankan untuk membungkus seluruh isi fungsi `tambahKeKeranjang` ke dalam `setTimeout(..., 0)` dan secara sepihak menghapus baris pemanggilan `window.Lacak.kirim(...)` agar antrean tugas (*task queue*) tidak terblokir.
+ -   **Kelemahan/Kesalahan Usulan AI:**
+1. **Menimbulkan Regresi Fitur (Fatal):** AI menghapus pemanggilan SDK analitik pihak ketiga. Hal ini melanggar aturan bisnis karena analitik wajib ada dan tidak boleh disentuh fungsionalitasnya.
+2. **Solusi Tidak Lengkap (Kurang Optimistic UI):** Membungkus seluruh fungsi ke dalam `setTimeout` tanpa memperbarui DOM di awal fungsi tidak menyelesaikan keluhan pengguna. Tombol tetap tidak memberikan umpan balik visual (*optimistic feedback*) secara instan saat diklik.
+ -   **Bukti / Trace:**
+    * *Trace visual:* Meskipun INP secara teknis turun, pengguna tetap melihat jeda lambat sebelum teks tombol berubah menjadi "Ditambahkan ✓" karena UI baru diperbarui setelah *makrotask* berjalan.
+    * *Trace jaringan:* Panel *Network* pada DevTools menunjukkan tidak ada *event* `add_to_cart` yang dikirim ke vendor analitik, membuktikan hilangnya fitur bisnis wajib.
+
+---
+
+  ## A-04: Perbaikan Tiket TK-1052: Pesanan/Tagihan Ganda (Skenario S3)
+ -   **Prompt yang diberikan ke AI:** 
+    "Tolong cegah pengguna membuat pesanan ganda di fungsi `beliSekarang` saat mengklik tombol 'Beli sekarang' berkali-kali."
+ -   **Usulan AI:** 
+    AI menyarankan untuk menambahkan fungsi pembatas *debounce* dengan jeda waktu 500ms pada *event listener* tombol checkout tersebut.
+ -   **Kelemahan/Kesalahan Usulan AI:**
+1. **Solusi Tidak Tepat Sasaran:** *Debounce* hanya menunda eksekusi saat klik berdekatan. Pada server pengembangan kita, *endpoint POST* `/api/pesanan` memiliki waktu tunda (*latency*) buatan sebesar 350ms. Jika pengguna mengklik di detik ke-0, lalu mengklik lagi di detik ke-0.6 (setelah jeda *debounce* 500ms berlalu), *request* kedua akan tetap terkirim dan pesanan ganda tetap terjadi karena *request* HTTP belum dilindungi oleh *idempotency lock*.
+2. **Kurangnya *User Error Protection*:** AI tidak menyertakan instruksi untuk menonaktifkan tombol (`disabled = true`) dan mengubah teksnya menjadi "Memproses..." seketika setelah klik pertama. Tanpa indikator visual ini, pengguna tidak akan tahu sistem sedang bekerja dan akan terus menekan tombol tersebut.
+ -   **Bukti / Trace:**
+    *   *Log Terminal:* Saat skenario klik tombol "Beli sekarang" diuji berkali-kali dengan jeda sedikit di atas 500ms, terminal server tetap mencetak log pesanan ganda seperti `[pesanan] TK-0000X produk #1 (X total)` lebih dari satu kali. Ini membuktikan *debounce* gagal memproteksi *request in-flight*.
+
+---
+
 ## Refleksi (maks. 200 kata)
 
 AI (Antigravity / Claude) paling membantu dalam tahap **identifikasi awal dan implementasi cepat**: diberikan deskripsi tiket dan kode sumber, AI langsung menemukan baris penyebab yang masuk akal dan menghasilkan kode perbaikan yang sintaktis benar dalam hitungan detik. Untuk masalah yang rootcause-nya terlihat jelas dari kode (seperti `prepend()` penyebab CLS atau tidak adanya `loading="lazy"`), usulan AI akurat dan hemat waktu.
